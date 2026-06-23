@@ -240,7 +240,14 @@ export const AgmarknetDashboard: React.FC = () => {
             </div>
           </div>
         )}
-      </main>
+        </main>
+        
+        {/* Attribution Footer */}
+        <div className="mt-8 text-center border-t border-gray-200 pt-6 pb-2">
+          <p className="text-xs text-gray-400 font-medium">
+            Data sourced from the public Agmarknet Portal (<a href="https://agmarknet.gov.in" target="_blank" rel="noopener noreferrer" className="hover:text-blue-500 transition-colors">agmarknet.gov.in</a>)
+          </p>
+        </div>
       </div>
     </div>
   );
