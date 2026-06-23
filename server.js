@@ -93,6 +93,11 @@ const getAllowedOrigin = (origin) => {
     return normalized;
   }
 
+  // Allow local network IPs for development testing
+  if (normalized.startsWith('http://192.168.') || normalized.startsWith('http://10.')) {
+    return normalized;
+  }
+
   return null;
 };
 
