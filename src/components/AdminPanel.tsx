@@ -45,6 +45,42 @@ interface AdminPanelProps {
   signingOut: boolean;
 }
 
+interface PendingConfirmSaleOrder {
+  id: string;
+  commodity: string;
+  variety?: string;
+  quantity_mt: number;
+  price_per_quintal: number;
+  delivery_location: string;
+  sauda_confirmation_date?: string;
+  notes?: string;
+  quality_report?: Record<string, string>;
+  seller_id?: {
+    id: string;
+    name: string;
+    trade_name?: string;
+    email: string;
+  };
+}
+
+interface PendingConfirmPurchaseOrder {
+  id: string;
+  commodity: string;
+  variety?: string;
+  quantity_mt: number;
+  expected_price_per_quintal?: number;
+  delivery_location: string;
+  sauda_confirmation_date?: string;
+  notes?: string;
+  quality_requirements?: Record<string, string>;
+  buyer_id?: {
+    id: string;
+    name: string;
+    trade_name?: string;
+    email: string;
+  };
+}
+
 const DEFAULT_ADMIN_STATS = {
   totalUsers: 0,
   totalFarmers: 0,
@@ -101,6 +137,8 @@ export default function AdminPanel({ profile, onSignOut, signingOut }: AdminPane
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [stats, setStats] = useState(DEFAULT_ADMIN_STATS);
+  const [pendingConfirmSaleOrder, setPendingConfirmSaleOrder] = useState<PendingConfirmSaleOrder | null>(null);
+  const [pendingConfirmPurchaseOrder, setPendingConfirmPurchaseOrder] = useState<PendingConfirmPurchaseOrder | null>(null);
   const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
   const toVersionNumber = (value: unknown) => {
     const parsed = Number(value);
@@ -339,6 +377,26 @@ export default function AdminPanel({ profile, onSignOut, signingOut }: AdminPane
     setIsMobileMenuOpen(false);
   };
 
+  const handleManualConfirmSalesOrder = () => {
+    setPendingConfirmSaleOrder(null);
+    handleViewChange('confirm-sales-order');
+  };
+
+  const handleManualConfirmPurchaseOrder = () => {
+    setPendingConfirmPurchaseOrder(null);
+    handleViewChange('confirm-purchase-order');
+  };
+
+  const handleVerifySaleOrder = (order: PendingConfirmSaleOrder) => {
+    setPendingConfirmSaleOrder(order);
+    handleViewChange('confirm-sales-order');
+  };
+
+  const handleVerifyPurchaseOrder = (order: PendingConfirmPurchaseOrder) => {
+    setPendingConfirmPurchaseOrder(order);
+    handleViewChange('confirm-purchase-order');
+  };
+
   const navButtonClass = (view: View) =>
     `w-full flex items-center justify-start gap-3 px-4 py-2.5 rounded-lg text-sm transition-colors ${
       currentView === view ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-700/50'
@@ -425,7 +483,7 @@ export default function AdminPanel({ profile, onSignOut, signingOut }: AdminPane
 
           {/* 5. Confirm Sales Order Form */}
           <button
-            onClick={() => handleViewChange('confirm-sales-order')}
+            onClick={handleManualConfirmSalesOrder}
             className={navButtonClass('confirm-sales-order')}
           >
             <FileText className="w-5 h-5" />
@@ -434,7 +492,7 @@ export default function AdminPanel({ profile, onSignOut, signingOut }: AdminPane
 
           {/* 6. Confirm Purchase Order Form */}
           <button
-            onClick={() => handleViewChange('confirm-purchase-order')}
+            onClick={handleManualConfirmPurchaseOrder}
             className={navButtonClass('confirm-purchase-order')}
           >
             <FileText className="w-5 h-5" />
@@ -730,16 +788,16 @@ export default function AdminPanel({ profile, onSignOut, signingOut }: AdminPane
             />
           )}
           {currentView === 'all-purchase-orders' && (
-            <AllPurchaseOrders currentUserRole={profile.role} />
+            <AllPurchaseOrders currentUserRole={profile.role} onVerifyOrder={handleVerifyPurchaseOrder} />
           )}
           {currentView === 'all-sale-orders' && (
-            <AllSaleOrders currentUserRole={profile.role} />
+            <AllSaleOrders currentUserRole={profile.role} onVerifyOrder={handleVerifySaleOrder} />
           )}
           {currentView === 'confirm-sales-order' && (
-            <ConfirmSalesOrderForm />
+            <ConfirmSalesOrderForm initialOrder={pendingConfirmSaleOrder} />
           )}
           {currentView === 'confirm-purchase-order' && (
-            <ConfirmPurchaseOrderForm />
+            <ConfirmPurchaseOrderForm initialOrder={pendingConfirmPurchaseOrder} />
           )}
           {currentView === 'all-confirmed-orders' && (
             <AllConfirmedOrders currentUserRole={profile.role} dataVersion={dataVersion} />

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShoppingCart, RefreshCw, Eye, Pencil, X, XCircle } from 'lucide-react';
+import { ShoppingCart, RefreshCw, Eye, Pencil, X, XCircle, ClipboardCheck } from 'lucide-react';
 
 interface PurchaseOrder {
   id: string;
@@ -16,6 +16,7 @@ interface PurchaseOrder {
   buyer_id?: {
     id: string;
     name: string;
+    trade_name?: string;
     email: string;
   };
   createdAt: string;
@@ -23,9 +24,10 @@ interface PurchaseOrder {
 
 interface AllPurchaseOrdersProps {
   currentUserRole: string;
+  onVerifyOrder?: (order: PurchaseOrder) => void;
 }
 
-export default function AllPurchaseOrders({ currentUserRole }: AllPurchaseOrdersProps) {
+export default function AllPurchaseOrders({ currentUserRole, onVerifyOrder }: AllPurchaseOrdersProps) {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -312,13 +314,20 @@ export default function AllPurchaseOrders({ currentUserRole }: AllPurchaseOrders
                     </td>
                     <td className="px-6 py-4 text-sm">
                       <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => openOrder(order)}
+                        <button
+                          onClick={() => onVerifyOrder?.(order)}
                           className="inline-flex items-center gap-1 rounded-lg border border-green-200 px-3 py-1.5 text-green-700 hover:bg-green-50 font-medium"
-                      >
-                        <Eye className="w-4 h-4" />
+                        >
+                          <ClipboardCheck className="w-4 h-4" />
+                          Verify
+                        </button>
+                        <button
+                          onClick={() => openOrder(order)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-amber-200 px-3 py-1.5 text-amber-700 hover:bg-amber-50 font-medium"
+                        >
+                          <Eye className="w-4 h-4" />
                           View
-                      </button>
+                        </button>
                         {isSuperAdmin && (
                           <button
                             onClick={() => editOrder(order)}

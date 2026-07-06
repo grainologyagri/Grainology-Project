@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { FileText, Save, Upload, FileSpreadsheet, Download, Map, AlertTriangle } from 'lucide-react';
 import { COMMODITY_VARIETIES } from '../../constants/commodityVarieties';
 import { fetchCommodities, fetchVarieties } from '../../lib/commodityVariety';
@@ -15,10 +15,28 @@ interface User {
   email: string;
 }
 
-export default function ConfirmPurchaseOrderForm() {
+interface InitialPurchaseOrder {
+  id: string;
+  commodity: string;
+  variety?: string;
+  quantity_mt: number;
+  expected_price_per_quintal?: number;
+  delivery_location: string;
+  sauda_confirmation_date?: string;
+  notes?: string;
+  quality_requirements?: Record<string, string>;
+  buyer_id?: User;
+}
+
+interface ConfirmPurchaseOrderFormProps {
+  initialOrder?: InitialPurchaseOrder | null;
+}
+
+export default function ConfirmPurchaseOrderForm({ initialOrder }: ConfirmPurchaseOrderFormProps) {
   const { showSuccess, showError } = useToastContext();
+  const prefillSelectionRef = useRef<{ commodity: string; variety: string } | null>(null);
   const [customers, setCustomers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -91,6 +109,37 @@ export default function ConfirmPurchaseOrderForm() {
 
   const toUpperText = (value?: string | null) => String(value ?? '').trim().toUpperCase();
 
+  const toDateInputValue = (value?: string | null) => {
+    if (!value) return new Date().toISOString().slice(0, 10);
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return String(value).slice(0, 10);
+    return parsed.toISOString().slice(0, 10);
+  };
+
+  useEffect(() => {
+    if (!initialOrder) return;
+
+    const buyer = initialOrder.buyer_id;
+    const buyerDisplayName = getDisplayName(buyer);
+
+    prefillSelectionRef.current = {
+      commodity: initialOrder.commodity || 'Paddy',
+      variety: initialOrder.variety || ''
+    };
+    setUploadMode('manual');
+    setCustomerId(buyer?.id || '');
+    setTransactionDate(toDateInputValue(initialOrder.sauda_confirmation_date));
+    setSupplierName(buyerDisplayName);
+    setCommodity(initialOrder.commodity || 'Paddy');
+    setVariety(initialOrder.variety || '');
+    setGrossWeightMt(Number(initialOrder.quantity_mt) || 0);
+    setTareWeightMt(0);
+    setRatePerMt((Number(initialOrder.expected_price_per_quintal) || 0) * 10);
+    setQualityReport(initialOrder.quality_requirements || {});
+    setDeliveryLocation(initialOrder.delivery_location || '');
+    setRemarks(initialOrder.notes || '');
+  }, [initialOrder]);
+
   useEffect(() => {
     fetchCustomers();
     fetchCommodities().then(setCommodities).catch(() => {
@@ -143,6 +192,14 @@ export default function ConfirmPurchaseOrderForm() {
       fetchVarieties(commodity).then(setVarieties).catch(() => {
         setVarieties(COMMODITY_VARIETIES[commodity] || []);
       });
+      if (prefillSelectionRef.current) {
+        if (prefillSelectionRef.current.commodity === commodity) {
+          setVariety(prefillSelectionRef.current.variety);
+          prefillSelectionRef.current = null;
+        }
+        return;
+      }
+
       setVariety(''); // Reset variety when commodity changes
     } else {
       setVarieties([]);
@@ -427,7 +484,7 @@ export default function ConfirmPurchaseOrderForm() {
     setTransactionDate('');
     setState('');
     setSupplierName('');
-    setLocation('');
+    setLocationId('');
     setWarehouseName('');
     setChamberNo('');
     setCommodity('Paddy');
