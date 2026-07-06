@@ -35,7 +35,7 @@ export default function CreateTrade({ userId }: CreateTradeProps) {
   const [variety, setVariety] = useState('');
   const [quantityMt, setQuantityMt] = useState<number>(0);
   const [pricePerQuintal, setPricePerQuintal] = useState<number>(0);
-  const [location, setLocation] = useState('');
+  const [address, setAddress] = useState('');
   const [saudaDate, setSaudaDate] = useState('');
   const [qualityTerms, setQualityTerms] = useState('');
   const [qualityReport, setQualityReport] = useState<Record<string, string>>({});
@@ -44,7 +44,6 @@ export default function CreateTrade({ userId }: CreateTradeProps) {
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const [deliveryLocation, setDeliveryLocation] = useState('');
   const [commodities, setCommodities] = useState<string[]>([]);
   const [varieties, setVarieties] = useState<string[]>([]);
 
@@ -198,7 +197,7 @@ export default function CreateTrade({ userId }: CreateTradeProps) {
         commodity,
         variety,
         quantity_mt: quantityMt,
-        delivery_location: deliveryLocation || location,
+        delivery_location: address,
         sauda_confirmation_date: saudaDate || null,
         notes: qualityTerms,
       };
@@ -236,7 +235,7 @@ export default function CreateTrade({ userId }: CreateTradeProps) {
         setVariety('');
         setQuantityMt(0);
         setPricePerQuintal(0);
-        setLocation('');
+        setAddress('');
         setSaudaDate('');
         setQualityTerms('');
         setQualityReport({});
@@ -494,49 +493,36 @@ export default function CreateTrade({ userId }: CreateTradeProps) {
                 )}
               </div>
 
-              {/* 7. Remarks */}
+              {/* 7. Address */}
+              <div className="border-t border-gray-200 pt-6">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    <span className="text-gray-900">7. Address</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    required
+                    placeholder="Enter full address"
+                    // className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* 8. Remarks */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  <span className="text-gray-900">7. Remarks</span>
+                  <span className="text-gray-900">8. Remarks</span>
                 </label>
                 <textarea
                   value={qualityTerms}
                   onChange={(e) => setQualityTerms(e.target.value)}
                   placeholder="Enter additional information, special instructions, or quality terms..."
                   rows={4}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-lg resize-none"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
                 />
-              </div>
-
-              {/* Other Fields (Location) */}
-              <div className="border-t border-gray-200 pt-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Location*
-                    </label>
-                    <input
-                      type="text"
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
-                      required
-                      placeholder="Enter the location EXW or FOR (City, State)"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Delivery Location (if different)
-                    </label>
-                    <input
-                      type="text"
-                      value={deliveryLocation}
-                      onChange={(e) => setDeliveryLocation(e.target.value)}
-                      placeholder="Specific delivery location"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
               </div>
 
               <div className="flex items-start gap-2 pt-4">
@@ -559,7 +545,7 @@ export default function CreateTrade({ userId }: CreateTradeProps) {
                   type="button"
                   onClick={() => {
                     localStorage.setItem('draft_trade', JSON.stringify({
-                      commodity, variety, quantityMt, pricePerQuintal, location
+                      commodity, variety, quantityMt, pricePerQuintal, address
                     }));
                   }}
                   className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
