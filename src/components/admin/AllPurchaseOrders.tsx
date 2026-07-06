@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShoppingCart, RefreshCw, Eye, X } from 'lucide-react';
+import { ShoppingCart, RefreshCw, Eye, Pencil, X, XCircle } from 'lucide-react';
 
 interface PurchaseOrder {
   id: string;
@@ -29,7 +29,7 @@ export default function AllPurchaseOrders({ currentUserRole }: AllPurchaseOrders
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [filterStatus, setFilterStatus] = useState<string>('All');
+  const [filterStatus, setFilterStatus] = useState<string>('Open');
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -47,7 +47,7 @@ export default function AllPurchaseOrders({ currentUserRole }: AllPurchaseOrders
   });
   const isSuperAdmin = currentUserRole === 'super_admin';
 
-  const statuses = ['All', 'Open', 'In Negotiation', 'Confirmed', 'Completed', 'Cancelled'];
+  const statuses = ['Open', 'Confirmed', 'In Transit', 'Completed', 'Cancelled'];
 
   useEffect(() => {
     fetchAllPurchaseOrders();
@@ -86,9 +86,7 @@ export default function AllPurchaseOrders({ currentUserRole }: AllPurchaseOrders
     }
   };
 
-  const filteredOrders = filterStatus === 'All' 
-    ? orders 
-    : orders.filter(o => o.status === filterStatus);
+  const filteredOrders = orders.filter(o => o.status === filterStatus);
 
   const formatDate = (dateStr: string | undefined, fallbackDate?: string) => {
     const dateToUse = dateStr || fallbackDate;
@@ -157,8 +155,27 @@ export default function AllPurchaseOrders({ currentUserRole }: AllPurchaseOrders
     });
   };
 
+  const editOrder = (order: PurchaseOrder) => {
+    openOrder(order);
+    setIsEditing(true);
+  };
+
+  const cancelOrder = (order: PurchaseOrder) => {
+    const confirmed = window.confirm('Are you sure you want to cancel this purchase order?');
+
+    if (!confirmed) return;
+
+    updateOrderStatus(order.id, 'Cancelled');
+  };
+
   const saveOrderEdits = async () => {
     if (!selectedOrder) return;
+
+    if (selectedOrder.status !== 'Cancelled' && editForm.status === 'Cancelled') {
+      const confirmed = window.confirm('Are you sure you want to cancel this purchase order?');
+
+      if (!confirmed) return;
+    }
 
     try {
       setSavingOrder(true);
@@ -271,8 +288,6 @@ export default function AllPurchaseOrders({ currentUserRole }: AllPurchaseOrders
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Variety</th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Quantity (MT)</th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Expected Price</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Payment Terms</th>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Status</th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Created</th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
                 </tr>
@@ -292,29 +307,36 @@ export default function AllPurchaseOrders({ currentUserRole }: AllPurchaseOrders
                     <td className="px-6 py-4 text-sm text-gray-900">
                       {order.expected_price_per_quintal ? `₹${order.expected_price_per_quintal}/qt` : '-'}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{order.payment_terms}</td>
-                    <td className="px-6 py-4 text-sm">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        order.status === 'Open' ? 'bg-blue-100 text-blue-800' :
-                        order.status === 'In Negotiation' ? 'bg-yellow-100 text-yellow-800' :
-                        order.status === 'Confirmed' ? 'bg-green-100 text-green-800' :
-                        order.status === 'Completed' ? 'bg-gray-100 text-gray-800' :
-                        'bg-red-100 text-red-800'
-                      }`}>
-                        {order.status}
-                      </span>
-                    </td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {new Date(order.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 text-sm">
+                      <div className="flex items-center gap-2">
                       <button
                         onClick={() => openOrder(order)}
-                        className="text-green-600 hover:text-green-700 font-medium flex items-center gap-1"
+                          className="inline-flex items-center gap-1 rounded-lg border border-green-200 px-3 py-1.5 text-green-700 hover:bg-green-50 font-medium"
                       >
                         <Eye className="w-4 h-4" />
-                        {isSuperAdmin ? 'View / Edit' : 'View'}
+                          View
                       </button>
+                        {isSuperAdmin && (
+                          <button
+                            onClick={() => editOrder(order)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-blue-200 px-3 py-1.5 text-blue-700 hover:bg-blue-50 font-medium"
+                          >
+                            <Pencil className="w-4 h-4" />
+                            Edit
+                          </button>
+                        )}
+                        <button
+                          onClick={() => cancelOrder(order)}
+                          disabled={updatingStatus === order.id || order.status === 'Cancelled' || order.status === 'Completed'}
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-red-700 hover:bg-red-50 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <XCircle className="w-4 h-4" />
+                          Cancel
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -335,13 +357,14 @@ export default function AllPurchaseOrders({ currentUserRole }: AllPurchaseOrders
             <div className="sticky top-0 bg-gray-50 border-b border-gray-200 p-6 flex justify-between items-center">
               <h2 className="text-xl font-semibold text-gray-900">Purchase Order Details</h2>
               <div className="flex items-center gap-3">
-                {isSuperAdmin && (
+                {isSuperAdmin && !isEditing && (
                   <button
                     type="button"
-                    onClick={() => setIsEditing((prev) => !prev)}
-                    className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
+                    onClick={() => setIsEditing(true)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-blue-200 px-3 py-1.5 text-blue-700 hover:bg-blue-50 font-medium"
                   >
-                    {isEditing ? 'Cancel Edit' : 'Edit Order'}
+                    <Pencil className="w-4 h-4" />
+                    Edit
                   </button>
                 )}
                 <button
@@ -447,13 +470,15 @@ export default function AllPurchaseOrders({ currentUserRole }: AllPurchaseOrders
                     value={isEditing ? editForm.status : selectedOrder.status}
                     onChange={(e) => isEditing
                       ? setEditForm((prev) => ({ ...prev, status: e.target.value }))
-                      : updateOrderStatus(selectedOrder.id, e.target.value)}
+                      : e.target.value === 'Cancelled'
+                        ? cancelOrder(selectedOrder)
+                        : updateOrderStatus(selectedOrder.id, e.target.value)}
                     disabled={!isEditing && updatingStatus === selectedOrder.id}
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white font-bold"
                   >
                     <option value="Open">Open</option>
-                    <option value="In Negotiation">In Negotiation</option>
                     <option value="Confirmed">Confirmed</option>
+                    <option value="In Transit">In Transit</option>
                     <option value="Completed">Completed</option>
                     <option value="Cancelled">Cancelled</option>
                   </select>
@@ -518,7 +543,7 @@ export default function AllPurchaseOrders({ currentUserRole }: AllPurchaseOrders
                     type="button"
                     onClick={saveOrderEdits}
                     disabled={savingOrder}
-                    className="px-5 py-2.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-60"
+                    className="inline-flex items-center gap-1 rounded-lg border border-green-200 px-3 py-1.5 text-green-700 hover:bg-green-50 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {savingOrder ? 'Saving...' : 'Save Changes'}
                   </button>
