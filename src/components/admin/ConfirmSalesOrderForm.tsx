@@ -47,6 +47,11 @@ interface QualityDeductionRow {
   deductionAmount: number;
 }
 
+interface AdditionalDeductionRow {
+  reason: string;
+  amount: string;
+}
+
 const toUpperText = (value?: string | null) => String(value ?? '').trim().toUpperCase();
 
 const toTitleCase = (value: string) =>
@@ -115,6 +120,9 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
   const [actualQualityValues, setActualQualityValues] = useState<Record<string, string>>({});
   const [qualityParameters, setQualityParameters] = useState<QualityParameter[]>([]);
   const [qualityParametersLoading, setQualityParametersLoading] = useState(false);
+  const [additionalDeductions, setAdditionalDeductions] = useState<AdditionalDeductionRow[]>([
+    { reason: '', amount: '' }
+  ]);
 
   const getDisplayName = (customer?: User | null) => {
     if (!customer) return '';
@@ -391,8 +399,33 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
 
   const activeDeductionRows = qualityDeductionRows.filter((row) => row.excessPercentage > 0);
   const totalWeightDeductionKg = roundToTwo(activeDeductionRows.reduce((sum, row) => sum + row.weightDeductionKg, 0));
-  const totalDeductionAmount = roundToTwo(activeDeductionRows.reduce((sum, row) => sum + row.deductionAmount, 0));
+  const qualityDeductionTotal = roundToTwo(activeDeductionRows.reduce((sum, row) => sum + row.deductionAmount, 0));
+  const activeAdditionalDeductions = additionalDeductions
+    .map((deduction) => ({
+      reason: deduction.reason.trim() || 'Additional Deduction',
+      amount: roundToTwo(Number(deduction.amount) || 0)
+    }))
+    .filter((deduction) => deduction.amount > 0);
+  const additionalDeductionTotal = roundToTwo(activeAdditionalDeductions.reduce((sum, deduction) => sum + deduction.amount, 0));
+  const totalDeductionAmount = roundToTwo(qualityDeductionTotal + additionalDeductionTotal);
   const netPayableAmount = roundToTwo(Math.max(grossAmount - totalDeductionAmount, 0));
+
+  const addAdditionalDeduction = () => {
+    setAdditionalDeductions((prev) => [...prev, { reason: '', amount: '' }]);
+  };
+
+  const removeAdditionalDeduction = (index: number) => {
+    setAdditionalDeductions((prev) => {
+      const next = prev.filter((_, currentIndex) => currentIndex !== index);
+      return next.length > 0 ? next : [{ reason: '', amount: '' }];
+    });
+  };
+
+  const updateAdditionalDeduction = (index: number, field: keyof AdditionalDeductionRow, value: string) => {
+    setAdditionalDeductions((prev) =>
+      prev.map((deduction, currentIndex) => currentIndex === index ? { ...deduction, [field]: value } : deduction)
+    );
+  };
 
   const resetForm = () => {
     prefillSelectionRef.current = null;
@@ -409,6 +442,7 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
     setGrossAmount(0);
     setQualityReport({});
     setActualQualityValues({});
+    setAdditionalDeductions([{ reason: '', amount: '' }]);
     setDeliveryLocation('');
     setRemarks('');
   };
@@ -429,6 +463,18 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
 
       if (!customerId) {
         showError('Please select a supplier name');
+        setSubmitting(false);
+        return;
+      }
+
+      const hasIncompleteAdditionalDeduction = additionalDeductions.some((deduction) => {
+        const hasReason = deduction.reason.trim() !== '';
+        const hasAmount = deduction.amount !== '' && Number(deduction.amount) > 0;
+        return hasReason && !hasAmount;
+      });
+
+      if (hasIncompleteAdditionalDeduction) {
+        showError('Please enter an amount for each additional deduction reason.');
         setSubmitting(false);
         return;
       }
@@ -486,7 +532,10 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
         other_deductions: activeDeductionRows.map((row) => ({
           amount: row.deductionAmount,
           remarks: `${row.parameterName}: Excess ${row.excessPercentage}%, Weight Deduction ${row.weightDeductionKg} KG`
-        })),
+        })).concat(activeAdditionalDeductions.map((deduction) => ({
+          amount: deduction.amount,
+          remarks: deduction.reason
+        }))),
         total_deduction: totalDeductionAmount,
         net_amount: netPayableAmount
       };
@@ -794,6 +843,65 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
           />
         </div>
 
+        <div className="border-b border-gray-200 pb-6">
+          <h2 className="text-xl font-semibold text-gray-800 mb-2">Additional Deductions</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Add non-quality deductions such as loading, shortage, claims, or agreed adjustments.
+          </p>
+
+          <div className="space-y-3">
+            {additionalDeductions.map((deduction, index) => (
+              <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <div className="md:col-span-7">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Reason</label>
+                  <input
+                    type="text"
+                    value={deduction.reason}
+                    onChange={(e) => updateAdditionalDeduction(index, 'reason', e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="Enter deduction reason"
+                  />
+                </div>
+
+                <div className="md:col-span-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Amount</label>
+                  <div className="relative">
+                    <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <input
+                      type="number"
+                      value={deduction.amount}
+                      onChange={(e) => updateAdditionalDeduction(index, 'amount', e.target.value)}
+                      min="0"
+                      step="0.01"
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent font-semibold"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div className="md:col-span-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={addAdditionalDeduction}
+                    className="flex-1 rounded-lg border border-green-600 bg-green-50 px-3 py-3 text-lg font-bold text-green-700 hover:bg-green-100"
+                    aria-label="Add deduction"
+                  >
+                    +
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeAdditionalDeduction(index)}
+                    className="flex-1 rounded-lg border border-red-600 bg-red-50 px-3 py-3 text-lg font-bold text-red-700 hover:bg-red-100"
+                    aria-label="Remove deduction"
+                  >
+                    -
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="border border-gray-300 rounded-xl overflow-hidden bg-white shadow-sm">
           <div className="bg-gray-900 px-6 py-4 text-white">
             <h2 className="text-xl font-semibold">Summary</h2>
@@ -828,11 +936,11 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
 
               <div className="divide-y divide-gray-200 text-sm">
                 <div className="grid grid-cols-12 px-4 py-3">
-                  <div className="col-span-8 text-gray-700">Gross Amount</div>
+                  <div className="col-span-8 text-gray-700 font-semibold">Gross Amount</div>
                   <div className="col-span-4 text-right font-semibold text-gray-900">{formatCurrency(grossAmount || 0)}</div>
                 </div>
 
-                {activeDeductionRows.length > 0 ? (
+                {activeDeductionRows.length > 0 && (
                   activeDeductionRows.map((row) => (
                     <div key={row.parameterName} className="grid grid-cols-12 px-4 py-3 bg-red-50">
                       <div className="col-span-8 text-gray-700">
@@ -844,16 +952,37 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
                       <div className="col-span-4 text-right font-semibold text-red-600">-{formatCurrency(row.deductionAmount)}</div>
                     </div>
                   ))
-                ) : (
-                  <div className="grid grid-cols-12 px-4 py-3">
-                    <div className="col-span-8 text-gray-700">Quality Deductions</div>
-                    <div className="col-span-4 text-right font-semibold text-red-600">{formatCurrency(0)}</div>
+                )}
+
+                {activeDeductionRows.length > 0 && (
+                  <div className="grid grid-cols-12 px-4 py-3 bg-gray-50">
+                    <div className="col-span-8 font-semibold text-gray-800">Total Quality Deductions</div>
+                    <div className="col-span-4 text-right font-bold text-red-600">-{formatCurrency(qualityDeductionTotal)}</div>
                   </div>
                 )}
 
-                <div className="grid grid-cols-12 px-4 py-3 bg-gray-50">
-                  <div className="col-span-8 font-semibold text-gray-800">Total Quality Deductions</div>
-                  <div className="col-span-4 text-right font-bold text-red-600">-{formatCurrency(totalDeductionAmount)}</div>
+                {activeAdditionalDeductions.length > 0 && (
+                  activeAdditionalDeductions.map((deduction, index) => (
+                    <div key={`${deduction.reason}-${index}`} className="grid grid-cols-12 px-4 py-3">
+                      <div className="col-span-8 text-gray-700">
+                        <p className="font-semibold">Additional Deduction</p>
+                        <p className="text-xs text-gray-600">{deduction.reason}</p>
+                      </div>
+                      <div className="col-span-4 text-right font-semibold text-red-600">-{formatCurrency(deduction.amount)}</div>
+                    </div>
+                  ))
+                )}
+
+                {activeAdditionalDeductions.length > 0 && (
+                  <div className="grid grid-cols-12 px-4 py-3 bg-gray-50">
+                    <div className="col-span-8 font-semibold text-gray-800">Total Additional Deductions</div>
+                    <div className="col-span-4 text-right font-bold text-red-600">-{formatCurrency(additionalDeductionTotal)}</div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-12 px-4 py-3 bg-gray-100">
+                  <div className="col-span-8 font-semibold text-gray-900">Total Deductions</div>
+                  <div className="col-span-4 text-right font-bold text-red-700">-{formatCurrency(totalDeductionAmount)}</div>
                 </div>
 
                 <div className="grid grid-cols-12 bg-green-50 px-4 py-4 text-base font-bold">
