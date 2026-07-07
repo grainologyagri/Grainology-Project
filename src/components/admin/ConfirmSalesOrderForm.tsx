@@ -38,6 +38,15 @@ interface QualityParameter {
   options: string[];
 }
 
+interface QualityDeductionRow {
+  parameterName: string;
+  expectedValue: number;
+  actualValue: number;
+  excessPercentage: number;
+  weightDeductionKg: number;
+  deductionAmount: number;
+}
+
 const toUpperText = (value?: string | null) => String(value ?? '').trim().toUpperCase();
 
 const toTitleCase = (value: string) =>
@@ -64,6 +73,21 @@ const matchOption = (value: string | undefined, options: string[]) => {
 
 const roundToTwo = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
+const parseQualityNumber = (value?: string | null) => {
+  const match = String(value ?? '').match(/\d+(?:\.\d+)?/);
+  if (!match) return null;
+
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const formatCurrency = (value: number) =>
+  value.toLocaleString('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 2
+  });
+
 export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrderFormProps) {
   const { showSuccess, showError } = useToastContext();
   const prefillSelectionRef = useRef<{ commodity: string; variety: string } | null>(null);
@@ -88,6 +112,7 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
   const [remarks, setRemarks] = useState('');
 
   const [qualityReport, setQualityReport] = useState<Record<string, string>>({});
+  const [actualQualityValues, setActualQualityValues] = useState<Record<string, string>>({});
   const [qualityParameters, setQualityParameters] = useState<QualityParameter[]>([]);
   const [qualityParametersLoading, setQualityParametersLoading] = useState(false);
 
@@ -125,7 +150,7 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
     setCommodity(selectedCommodity);
     setVariety(selectedVariety);
     setGrossWeightMt(Number(initialOrder.quantity_mt) || 0);
-    setTareWeightMt(0);
+    setTareWeightMt(3.50);
     setRatePerMt((Number(initialOrder.price_per_quintal) || 0) * 10);
     setDeliveryLocation(initialOrder.delivery_location || '');
     setRemarks(initialOrder.notes || '');
@@ -191,12 +216,14 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
       if (!commodity) {
         setQualityParameters([]);
         setQualityReport({});
+        setActualQualityValues({});
         return;
       }
 
       setQualityParametersLoading(true);
       setQualityParameters([]);
       setQualityReport({});
+      setActualQualityValues({});
 
       const token = localStorage.getItem('auth_token');
       if (!token) {
@@ -259,11 +286,18 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
           ...(pendingQualityReportRef.current || {})
         };
 
+        const initialActualValues: Record<string, string> = {};
+        params.forEach((param) => {
+          const savedValue = mergedReport[`${param.parameter_name} Actual Value (%)`];
+          if (savedValue) initialActualValues[param.parameter_name] = savedValue;
+        });
+
         setQualityParameters(params.map((param) => ({
           ...param,
           actual_value: mergedReport[param.parameter_name] || param.actual_value
         })));
         setQualityReport(mergedReport);
+        setActualQualityValues(initialActualValues);
         pendingQualityReportRef.current = null;
         setQualityParametersLoading(false);
       } catch (error: any) {
@@ -321,6 +355,45 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
     );
   };
 
+  const handleActualQualityValueChange = (paramName: string, value: string) => {
+    const sanitizedValue = value.replace(/%/g, '');
+
+    setActualQualityValues((prev) => ({
+      ...prev,
+      [paramName]: sanitizedValue
+    }));
+  };
+
+  const qualityDeductionRows: QualityDeductionRow[] = qualityParameters.reduce((rows: QualityDeductionRow[], param) => {
+    const actualValueText = actualQualityValues[param.parameter_name];
+    if (actualValueText === undefined || actualValueText === '') return rows;
+
+    const expectedValue = parseQualityNumber(qualityReport[param.parameter_name] || param.actual_value);
+    const actualValue = Number(actualValueText);
+
+    if (expectedValue === null || !Number.isFinite(actualValue)) return rows;
+
+    const excessPercentage = roundToTwo(Math.max(actualValue - expectedValue, 0));
+    const weightDeductionKg = roundToTwo(excessPercentage * netWeightMt * 10);
+    const deductionAmount = roundToTwo((ratePerMt * weightDeductionKg) / 1000);
+
+    rows.push({
+      parameterName: param.parameter_name,
+      expectedValue,
+      actualValue,
+      excessPercentage,
+      weightDeductionKg,
+      deductionAmount
+    });
+
+    return rows;
+  }, []);
+
+  const activeDeductionRows = qualityDeductionRows.filter((row) => row.excessPercentage > 0);
+  const totalWeightDeductionKg = roundToTwo(activeDeductionRows.reduce((sum, row) => sum + row.weightDeductionKg, 0));
+  const totalDeductionAmount = roundToTwo(activeDeductionRows.reduce((sum, row) => sum + row.deductionAmount, 0));
+  const netPayableAmount = roundToTwo(Math.max(grossAmount - totalDeductionAmount, 0));
+
   const resetForm = () => {
     prefillSelectionRef.current = null;
     pendingQualityReportRef.current = null;
@@ -335,6 +408,7 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
     setRatePerMt(0);
     setGrossAmount(0);
     setQualityReport({});
+    setActualQualityValues({});
     setDeliveryLocation('');
     setRemarks('');
   };
@@ -359,6 +433,22 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
         return;
       }
 
+      const submittedQualityReport = {
+        ...qualityReport,
+        ...Object.fromEntries(
+          Object.entries(actualQualityValues)
+            .filter(([, value]) => value !== '')
+            .map(([paramName, value]) => [`${paramName} Actual Value (%)`, value])
+        ),
+        ...Object.fromEntries(
+          qualityDeductionRows.flatMap((row) => [
+            [`${row.parameterName} Excess (%)`, String(row.excessPercentage)],
+            [`${row.parameterName} Weight Deduction (KG)`, String(row.weightDeductionKg)],
+            [`${row.parameterName} Deduction Amount`, String(row.deductionAmount)]
+          ])
+        )
+      };
+
       const orderData = {
         customer_id: customerId,
         transaction_date: transactionDate,
@@ -370,7 +460,7 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
         net_weight_mt: netWeightMt,
         rate_per_mt: ratePerMt,
         gross_amount: grossAmount,
-        quality_report: qualityReport,
+        quality_report: submittedQualityReport,
         delivery_location: deliveryLocation,
         remarks,
 
@@ -391,11 +481,14 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
         bdoi: 0,
         excess_bdoi: 0,
         moi_bdoi: 0,
-        weight_deduction_kg: 0,
+        weight_deduction_kg: totalWeightDeductionKg,
         deduction_amount_moi_bdoi: 0,
-        other_deductions: [],
-        total_deduction: 0,
-        net_amount: grossAmount
+        other_deductions: activeDeductionRows.map((row) => ({
+          amount: row.deductionAmount,
+          remarks: `${row.parameterName}: Excess ${row.excessPercentage}%, Weight Deduction ${row.weightDeductionKg} KG`
+        })),
+        total_deduction: totalDeductionAmount,
+        net_amount: netPayableAmount
       };
 
       const response = await fetch(`${apiUrl}/confirmed-sales-orders`, {
@@ -516,7 +609,7 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
 
         <div className="border-b border-gray-200 pb-6">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">Quantity and Rate</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Gross Weight (MT) <span className="text-red-500">*</span>
@@ -550,17 +643,6 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Net Weight (MT)</label>
-              <input
-                type="number"
-                value={netWeightMt || ''}
-                readOnly
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 font-bold text-gray-900"
-                placeholder="0.00"
-              />
-            </div>
-
-            <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Rate Per MT <span className="text-red-500">*</span>
               </label>
@@ -579,16 +661,6 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Gross Amount</label>
-              <input
-                type="number"
-                value={grossAmount || ''}
-                readOnly
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 font-bold text-gray-900"
-                placeholder="0.00"
-              />
-            </div>
           </div>
         </div>
 
@@ -644,40 +716,69 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
                   <div className="col-span-1">S No.</div>
                   <div className="col-span-3">Particulars</div>
                   <div className="col-span-2">UOM</div>
-                  <div className="col-span-3">Standard</div>
-                  <div className="col-span-3">Actual Value</div>
+                  <div className="col-span-2">Standard</div>
+                  <div className="col-span-2">Expected Value</div>
+                  <div className="col-span-2">Actual Value (%)</div>
                 </div>
               </div>
 
               <div className="divide-y divide-gray-300">
-                {qualityParameters.map((param) => (
-                  <div key={param.id} className="grid grid-cols-12 gap-2 px-4 py-3 bg-white hover:bg-gray-50">
-                    <div className="col-span-1 flex items-center">
-                      <span className="font-semibold text-gray-700">{param.s_no}</span>
+                {qualityParameters.map((param) => {
+                  const deductionRow = qualityDeductionRows.find((row) => row.parameterName === param.parameter_name);
+                  const hasExcess = Boolean(deductionRow && deductionRow.excessPercentage > 0);
+
+                  return (
+                    <div
+                      key={param.id}
+                      className={`grid grid-cols-12 gap-2 px-4 py-3 ${hasExcess ? 'bg-red-50 hover:bg-red-100' : 'bg-white hover:bg-gray-50'}`}
+                    >
+                      <div className="col-span-1 flex items-center">
+                        <span className="font-semibold text-gray-700">{param.s_no}</span>
+                      </div>
+                      <div className="col-span-3 flex items-center">
+                        <span className="font-medium text-gray-900">{param.parameter_name}</span>
+                      </div>
+                      <div className="col-span-2 flex items-center">
+                        <span className="text-gray-700">{param.unit_of_measurement}</span>
+                      </div>
+                      <div className="col-span-2 flex items-center text-xs text-gray-600">
+                        {param.standard_value}
+                      </div>
+                      <div className="col-span-2 flex items-center">
+                        <select
+                          value={qualityReport[param.parameter_name] || ''}
+                          onChange={(e) => handleQualityChange(param.parameter_name, e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-yellow-50 font-medium text-sm"
+                        >
+                          {param.options.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-span-2 flex items-center">
+                        <input
+                          type="number"
+                          value={actualQualityValues[param.parameter_name] || ''}
+                          onChange={(e) => handleActualQualityValueChange(param.parameter_name, e.target.value)}
+                          onPaste={(e) => {
+                            if (e.clipboardData.getData('text').includes('%')) e.preventDefault();
+                          }}
+                          min="0"
+                          step="0.01"
+                          inputMode="decimal"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent font-medium text-sm"
+                          placeholder="5.00"
+                        />
+                      </div>
                     </div>
-                    <div className="col-span-3 flex items-center">
-                      <span className="font-medium text-gray-900">{param.parameter_name}</span>
-                    </div>
-                    <div className="col-span-2 flex items-center">
-                      <span className="text-gray-700">{param.unit_of_measurement}</span>
-                    </div>
-                    <div className="col-span-3 flex items-center text-xs text-gray-600">
-                      {param.standard_value}
-                    </div>
-                    <div className="col-span-3 flex items-center">
-                      <select
-                        value={qualityReport[param.parameter_name] || ''}
-                        onChange={(e) => handleQualityChange(param.parameter_name, e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-yellow-50 font-medium text-sm"
-                      >
-                        {param.options.map((option) => (
-                          <option key={option} value={option}>{option}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+
+              {/* <div className="bg-blue-50 border-b border-blue-200 px-4 py-3 text-sm text-blue-800">
+                Enter actual values as numbers only, for example 16. Do not enter 0.16 or 16%.
+              </div> */}
+
             </div>
           )}
         </div>
@@ -691,6 +792,81 @@ export default function ConfirmSalesOrderForm({ initialOrder }: ConfirmSalesOrde
             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
             placeholder="Enter remarks or additional information"
           />
+        </div>
+
+        <div className="border border-gray-300 rounded-xl overflow-hidden bg-white shadow-sm">
+          <div className="bg-gray-900 px-6 py-4 text-white">
+            <h2 className="text-xl font-semibold">Summary</h2>
+            <p className="text-sm text-gray-300">Final weight and amount review before confirming the sales order.</p>
+          </div>
+
+          <div className="p-6 space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Net Weight</p>
+                <p className="mt-2 text-2xl font-bold text-gray-900">
+                  {netWeightMt.toLocaleString('en-IN', { maximumFractionDigits: 2 })} MT
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Rate Per MT</p>
+                <p className="mt-2 text-2xl font-bold text-gray-900">{formatCurrency(ratePerMt || 0)}</p>
+              </div>
+
+              <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-green-700">Gross Amount</p>
+                <p className="mt-2 text-2xl font-bold text-green-800">{formatCurrency(grossAmount || 0)}</p>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-lg border border-gray-200">
+              <div className="grid grid-cols-12 bg-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">
+                <div className="col-span-8">Particulars</div>
+                <div className="col-span-4 text-right">Amount</div>
+              </div>
+
+              <div className="divide-y divide-gray-200 text-sm">
+                <div className="grid grid-cols-12 px-4 py-3">
+                  <div className="col-span-8 text-gray-700">Gross Amount</div>
+                  <div className="col-span-4 text-right font-semibold text-gray-900">{formatCurrency(grossAmount || 0)}</div>
+                </div>
+
+                {activeDeductionRows.length > 0 ? (
+                  activeDeductionRows.map((row) => (
+                    <div key={row.parameterName} className="grid grid-cols-12 px-4 py-3 bg-red-50">
+                      <div className="col-span-8 text-gray-700">
+                        <p className="font-semibold text-red-800">{row.parameterName}</p>
+                        <p className="text-xs text-red-700">
+                          Excess {row.excessPercentage.toLocaleString('en-IN', { maximumFractionDigits: 2 })}% | Weight Deduction {row.weightDeductionKg.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG
+                        </p>
+                      </div>
+                      <div className="col-span-4 text-right font-semibold text-red-600">-{formatCurrency(row.deductionAmount)}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="grid grid-cols-12 px-4 py-3">
+                    <div className="col-span-8 text-gray-700">Quality Deductions</div>
+                    <div className="col-span-4 text-right font-semibold text-red-600">{formatCurrency(0)}</div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-12 px-4 py-3 bg-gray-50">
+                  <div className="col-span-8 font-semibold text-gray-800">Total Quality Deductions</div>
+                  <div className="col-span-4 text-right font-bold text-red-600">-{formatCurrency(totalDeductionAmount)}</div>
+                </div>
+
+                <div className="grid grid-cols-12 bg-green-50 px-4 py-4 text-base font-bold">
+                  <div className="col-span-8 text-green-900">Net Payable Amount</div>
+                  <div className="col-span-4 text-right text-green-900">{formatCurrency(netPayableAmount)}</div>
+                </div>
+              </div>
+            </div>
+
+            <p className="rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+              Deduction Amount = Rate Per MT x Weight Deduction (KG) / 1000.
+            </p>
+          </div>
         </div>
 
         <button
